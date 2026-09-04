@@ -182,38 +182,55 @@ conn.execute("PRAGMA foreign_keys = ON;")
 
 
 # ==========================================
-# SIDEBAR: AUTENTIKASI PASSWORD & LOGIN
+# SIDEBAR: AUTENTIKASI PASSWORD, LOGIN & SIGN OUT
 # ==========================================
-st.sidebar.title("🔐 Login Pengguna")
+st.sidebar.title("🔐 Autentikasi Pengguna")
+
+# Inisialisasi state login di session state
+if "logged_in" not in st.session_state:
+  st.session_state["logged_in"] = False
+  st.session_state["active_user"] = None
 
 cursor.execute("SELECT username FROM users")
 usernames = [u["username"] for u in cursor.fetchall()]
 
-selected_username = st.sidebar.selectbox("Pilih Akun", options=usernames)
-input_password = st.sidebar.text_input("Masukkan Password", type="password")
+# Jika belum login, tampilkan menu form login
+if not st.session_state["logged_in"]:
+  selected_username = st.sidebar.selectbox("Pilih Akun", options=usernames)
+  input_password = st.sidebar.text_input("Masukkan Password", type="password")
 
-cursor.execute("SELECT * FROM users WHERE username = ?", (selected_username,))
-current_user = cursor.fetchone()
+  cursor.execute("SELECT * FROM users WHERE username = ?", (selected_username,))
+  current_user = cursor.fetchone()
 
-# Validasi Login
-is_authenticated = False
-if current_user and input_password == current_user["password"]:
-  is_authenticated = True
-else:
-  if input_password != "":
-    st.sidebar.error("⚠️ Password salah!")
+  if st.sidebar.button("🔓 Masuk (Login)"):
+    if current_user and input_password == current_user["password"]:
+      st.session_state["logged_in"] = True
+      st.session_state["active_user"] = selected_username
+      st.success("Login berhasil!")
+      st.rerun()
+    else:
+      st.sidebar.error("⚠️ Password salah!")
 
-if not is_authenticated:
   st.sidebar.warning("Silakan masukkan password yang valid untuk mengakses sistem.")
   st.stop()
+
+# Ambil data user yang sedang aktif berdasarkan sesi login
+cursor.execute("SELECT * FROM users WHERE username = ?", (st.session_state["active_user"],))
+current_user = cursor.fetchone()
 
 role_labels = {
     "super_admin": "👑 Super Admin (Akses Penuh Semua)",
     "admin": "🛡️ Admin (Akses 1 Perusahaan)",
     "user": "👁️ Viewer (Hanya Lihat & Download)"
 }
-st.sidebar.success(f"Login Berhasil sebagai **{selected_username}**")
+st.sidebar.success(f"Login sebagai: **{current_user['username']}**")
 st.sidebar.info(f"Hak Akses: **{role_labels.get(current_user['role'], 'User')}**")
+
+# Tombol Sign Out (Keluar)
+if st.sidebar.button("🚪 Sign Out (Keluar)"):
+  st.session_state["logged_in"] = False
+  st.session_state["active_user"] = None
+  st.rerun()
 
 st.sidebar.markdown("---")
 st.sidebar.title("📝 Sesi Audit & Perusahaan")
@@ -318,7 +335,6 @@ if current_user["role"] == "super_admin":
       del_uid = st.selectbox("Pilih Akun yang Dihapus", options=list(usr_map.keys()), format_func=lambda x: usr_map[x])
       submit_del_user = st.form_submit_button("⚠️ Hapus Akun Ini")
       if submit_del_user:
-        # Jangan biarkan menghapus diri sendiri jika sedang login sebagai superadmin aktif yang tersisa, atau beri peringatan
         cursor.execute("DELETE FROM users WHERE id = ?", (del_uid,))
         conn.commit()
         st.success("Akun berhasil dihapus permanen!")
@@ -610,7 +626,7 @@ def render_dashboard_ringkasan(cursor, session_id):
   with col_dl3:
     excel_buffer = generate_excel_report(cursor, session_id, st.session_state["nama_perusahaan"])
     st.download_button(
-        label="📊 Download Rekapitulasi Excel (.xlsx)",
+        label="📊 Rekapitulasi Excel (.xlsx)",
         data=excel_buffer,
         file_name=f"Rekap_Audit_ISPO_{st.session_state['nama_perusahaan'].replace(' ', '_')}.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
